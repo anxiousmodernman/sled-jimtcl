@@ -29,15 +29,24 @@ use std::os::raw::{c_int, c_void, c_char};
 #[no_mangle]
 pub unsafe extern "C" fn Rusty_Cmd(interp: *mut Jim_Interp, objc: c_int, objv: *const *mut Jim_Obj) ->  c_int {
 
-    let rawvec = objv as *mut u8;
-    let constructed: Vec<*mut Jim_Obj> = Vec::from_raw_parts(rawvec, 2, 2);
-    println!("constructed: {:?}", constructed);
-    
-    let temp = CString::new("subcmd").unwrap();
-    unsafe {
-//        let mut objref: Jim_Obj = std::ptr::read(objv);
-    }
-    //Jim_SetResultFormatted(interp, format.as_ptr(), msg.as_ptr());
+    // We're called with interpreter, objc and objv, the command line.
+
+    // In C, we can index into objv like this:
+    // zArg = Jim_String(objv[i]);
+    //
+    // Bindgen's version of Jim_String:
+    // pub fn Jim_String(objPtr: *mut Jim_Obj) -> *const ::std::os::raw::c_char;
+    //
+    // How do I get each Jim_Obj from objv?
+
+    // call Jim_GetString with segments of this? Seems too gnarly.
+    let _raw = objv as *mut u8;
+
+    // Do I need to make a vec? this doesn't work
+    //let constructed: Vec<*mut Jim_Obj> = Vec::from_raw_parts(rawvec, 2, 2);
+
+    let temp = CString::new("placeholder").unwrap();
+
     let mut privData: c_void = mem::uninitialized();
     Jim_CreateCommand(interp, temp.as_ptr(), Some(wrapper), &mut privData, None);
     JIM_OK as c_int
@@ -49,7 +58,7 @@ pub unsafe extern "C" fn wrapper(interp: *mut Jim_Interp, objc: c_int, objv: *co
 }
 
 #[no_mangle]
-pub fn Jim_rustyInit(interp: *mut Jim_Interp) -> c_int {
+pub fn Jim_sledInit(interp: *mut Jim_Interp) -> c_int {
     let cmdName = CString::new("sled").unwrap();
     let delProc: Jim_DelCmdProc = None;
     let mut privData: c_void = unsafe { mem::zeroed() };
@@ -61,7 +70,6 @@ pub fn Jim_rustyInit(interp: *mut Jim_Interp) -> c_int {
     if i != 0 {
         return JIM_ERR as c_int;
     }
-
 
     JIM_OK as c_int
 }
