@@ -1,0 +1,10 @@
+[package]
+name = "jimtcl-rs"
+version = "0.1.0"
+authors = ["Coleman McFarland <coleman.mcfarland@gmail.com>"]
+
+[lib]
+crate-type = ["dylib"]
+
+[build-dependencies]
+bindgen = "*"
