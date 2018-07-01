@@ -18,17 +18,33 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
  */
 
 use std::mem;
-use std::ffi::{CString};
+use std::ffi::{CStr, CString};
 
 use std::os::raw::{c_int, c_void, c_char};
 
+/// Our main command. In Tcl, when call "sled" command, we are calling this
+/// function. We expect to be called with "sled dbname /path/to/db". This function
+/// sets a new command dbname on the interpreter, and associates it with a pointer
+/// to a sled tree.
 #[no_mangle]
 pub unsafe extern "C" fn Rusty_Cmd(interp: *mut Jim_Interp, objc: c_int, objv: *const *mut Jim_Obj) ->  c_int {
-    //println!("can we print");
-    //Jim_SetResultString(interp, "Hello, World!", -1);
-    let format = CString::new("Hello %s").unwrap();
-    let msg = CString::new("world").unwrap();
-    Jim_SetResultFormatted(interp, format.as_ptr(), msg.as_ptr());
+
+    let rawvec = objv as *mut u8;
+    let constructed: Vec<*mut Jim_Obj> = Vec::from_raw_parts(rawvec, 2, 2);
+    println!("constructed: {:?}", constructed);
+    
+    let temp = CString::new("subcmd").unwrap();
+    unsafe {
+//        let mut objref: Jim_Obj = std::ptr::read(objv);
+    }
+    //Jim_SetResultFormatted(interp, format.as_ptr(), msg.as_ptr());
+    let mut privData: c_void = mem::uninitialized();
+    Jim_CreateCommand(interp, temp.as_ptr(), Some(wrapper), &mut privData, None);
+    JIM_OK as c_int
+}
+
+pub unsafe extern "C" fn wrapper(interp: *mut Jim_Interp, objc: c_int, objv: *const *mut Jim_Obj) ->  c_int {
+    println!("subcommand wrapper!");
     JIM_OK as c_int
 }
 
