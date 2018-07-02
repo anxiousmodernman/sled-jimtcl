@@ -1,15 +1,26 @@
-# jimtsh extensions
+# sled-jimtcl
+
+WIP: bindings to sled for Jim Tcl
+
+## Setup
 
 Install Jim Tcl libraries and the `jimsh` interpreter by cloning and running
 
 ```
+git clone https://github.com/msteveb/jimtcl
+cd jimtcl
 ./configure
 make
 sudo make install
 jimsh  # the jim tcl interpreter
 ```
 
-Build the rust extension (this project) as a shared library, and copy to /usr/local/lib/jim/
+Build the rust extension (this project) as a shared library, and copy to /usr/local/lib/jim/sled.so
+
+```
+cargo build
+sudo cp $(pwd)/target/debug/libsled_jimtcl.so /usr/local/lib/jim/sled.so
+```
 
 A **naming scheme is required** to allow the `jimsh` to find your extension. For
 example, to create a package named `foo`, the name should be the same across 
