@@ -18,6 +18,8 @@ jimsh  # the jim tcl interpreter
 Build the rust extension (this project) as a shared library, and copy to /usr/local/lib/jim/sled.so
 
 ```
+git clone https://gitlab.com/keyvalue/sled-jimtcl.git
+cd sled-jimtcl
 cargo build
 sudo cp $(pwd)/target/debug/libsled_jimtcl.so /usr/local/lib/jim/sled.so
 ```
@@ -44,3 +46,4 @@ sudo ln -s $(pwd)/target/debug/libsled_jimtcl.so /usr/local/lib/jim/sled.so
 
 You will need to restart the Jim Tcl interpreter if you rebuild this extension.
 
+The main repo is [on GitLab](https://gitlab.com/keyvalue/sled-jimtcl.git)
