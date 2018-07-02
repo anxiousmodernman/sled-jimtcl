@@ -1,10 +1,13 @@
 [package]
-name = "jimtcl-rs"
+name = "sled-jimtcl"
 version = "0.1.0"
 authors = ["Coleman McFarland <coleman.mcfarland@gmail.com>"]
 
 [lib]
 crate-type = ["dylib"]
+
+[dependencies]
+sled = "*"
 
 [build-dependencies]
 bindgen = "*"
