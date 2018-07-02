@@ -35,7 +35,7 @@ use std::os::raw::{c_char, c_int, c_void};
 /// sets a new command dbname on the interpreter, and associates it with a pointer
 /// to a sled tree.
 #[no_mangle]
-pub unsafe extern "C" fn Rusty_Cmd(
+pub unsafe extern "C" fn db_init(
     interp: *mut Jim_Interp,
     objc: c_int,
     objv: *const *mut Jim_Obj,
@@ -44,7 +44,6 @@ pub unsafe extern "C" fn Rusty_Cmd(
         println!("you must pass 2 arguments");
         return JIM_ERR as c_int;
     }
-
     let name_ptr = objv.offset(1);
     let path_ptr = objv.offset(2);
 
@@ -56,18 +55,10 @@ pub unsafe extern "C" fn Rusty_Cmd(
     let config = ConfigBuilder::new().path(path).build();
     let mut tree = Tree::start(config).unwrap();
 
-    // TODO can we avoid transmute?
-//    let transmuted = 
- //       std::mem::transmute::<&mut Tree, *mut c_void>(&mut tree);
-
-//    let casted = &mut tree as *mut Tree;
     let boxed: *mut Tree = Box::into_raw(Box::new(tree));
     let sz = std::mem::size_of::<*mut Tree>();
     let mut ttptr = Jim_Alloc(sz as c_int);
-    let tptr = 
-        std::mem::transmute::<*mut Tree, *mut c_void>(boxed);
-    ttptr = tptr;
-
+    ttptr = std::mem::transmute::<*mut Tree, *mut c_void>(boxed);
 
     let name = CStr::from_ptr((**name_ptr).bytes);
     Jim_CreateCommand(interp, name.as_ptr(), Some(wrapper), ttptr, None)
@@ -78,21 +69,45 @@ pub unsafe extern "C" fn wrapper(
     objc: c_int,
     objv: *const *mut Jim_Obj,
 ) -> c_int {
-    println!("subcommand wrapper!");
-    // pub cmdPrivData: *mut ::std::os::raw::c_void,
-    //let mut private = (*interp).cmdPrivData;
     let mut tree = (*interp).cmdPrivData as *mut Tree;
-    println!("ref casted!");
-    let k = b"first".to_vec();
-    if let Ok(Some(val)) = (*tree).get(&k) {
-        let newval: u8 = val[0] + 1;
-        println!("val: {:?}", newval);
-        (*tree).set(k.clone(), vec![newval]);
-        return JIM_OK as c_int;
+    let mut v: Vec<*const *mut Jim_Obj> = Vec::new();
+    for i in 0..objc as isize {
+        v.push(objv.offset(i));
     }
-    let k = b"first".to_vec();
-    (*tree).set(k, vec![0]);
+    dbg_interp(interp);
+    db_cmd(&mut(*tree), v);
     JIM_OK as c_int
+}
+
+fn db_cmd(tree: &mut Tree, cmd_line: Vec<*const *mut Jim_Obj>) {
+
+    // types encountered:
+    // command, source, dict, list
+    for item in cmd_line {
+        dbg_obj(item);
+    }
+}
+
+fn dbg_interp(interp: *mut Jim_Interp) {
+    unsafe {
+        // cur_script is the _entire_ script we're running
+        let cur_script = *(*interp).currentScriptObj;
+        dbg_obj_struct(&cur_script, "cur_script");
+        println!("eval depth: {:?}", unsafe {(*interp).evalDepth});
+        //println!("current script: {:?}", cur_script);
+    }
+}
+
+fn dbg_obj_struct(obj: &Jim_Obj, msg: &str) {
+        println!("\tOBJECT {:?}", msg);
+        println!("typePtr: {:?}", unsafe {CStr::from_ptr((*obj.typePtr).name )});
+        println!("bytes: {:?}", unsafe {CStr::from_ptr(obj.bytes)});
+}
+
+fn dbg_obj(obj: *const *mut Jim_Obj) {
+        println!("\t*const *mut OBJECT: {:?}", obj);
+        println!("typePtr: {:?}", unsafe {CStr::from_ptr((*((**obj).typePtr)).name )});
+        println!("bytes: {:?}", unsafe {CStr::from_ptr(((**obj).bytes) )});
 }
 
 #[no_mangle]
@@ -106,7 +121,7 @@ pub fn Jim_sledInit(interp: *mut Jim_Interp) -> c_int {
         i = Jim_CreateCommand(
             interp,
             cmdName.as_ptr(),
-            Some(Rusty_Cmd),
+            Some(db_init),
             &mut privData,
             delProc,
         );
