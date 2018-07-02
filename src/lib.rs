@@ -116,21 +116,15 @@ pub fn Jim_sledInit(interp: *mut Jim_Interp) -> c_int {
     let delProc: Jim_DelCmdProc = None;
     let mut privData: c_void = unsafe { mem::zeroed() };
 
-    let mut i: c_int = 1;
     unsafe {
-        i = Jim_CreateCommand(
+        Jim_CreateCommand(
             interp,
             cmdName.as_ptr(),
             Some(db_init),
             &mut privData,
             delProc,
-        );
+        )
     }
-    if i != 0 {
-        return JIM_ERR as c_int;
-    }
-
-    JIM_OK as c_int
 }
 
 #[cfg(test)]
