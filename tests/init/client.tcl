@@ -9,16 +9,15 @@ variable msg2 {
     db put blah 99
     db get blah
 }
-puts [list $msg2]
 
 $client puts $msg2
 $client flush
-$client gets reply
-puts $reply
-$client gets reply
-puts $reply
-$client gets reply
-puts $reply
+puts "waiting for reply..."
+$client readable {
+    set reply [$client gets]
+    puts "reply $reply"
+    $client close
+}
 
-
-$client close
+# waits until "done" variable changes or until handlers are removed
+vwait done

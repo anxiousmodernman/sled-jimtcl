@@ -10,6 +10,12 @@ if {[file exists $SOCKET]} {
     file delete $SOCKET
 }
 
+proc is_whitespace {s} {
+    set val [string length [string trim $s]]
+    puts "val: $val"
+    return $val
+}
+
 proc serve {path} {
     variable f {}
     set f [socket unix.server $path]
@@ -21,8 +27,10 @@ proc serve {path} {
             if {[string length [string trim $buf]] > 0} {
                 puts "received: $buf"
                 set computed [eval $buf]
-                puts "computed: $computed"
-                $client puts $computed
+                if {[string length [string trim $computed]] > 0} {
+                    puts "computed: $computed"
+                    $client puts $computed
+                }
             }
         }
         $client close
