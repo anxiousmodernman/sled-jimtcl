@@ -1,6 +1,7 @@
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
+#![allow(unused_imports)]
 
 extern crate sled;
 
@@ -8,22 +9,6 @@ use sled::{ConfigBuilder, Tree};
 
 // #include <jim.h>
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
-
-/*
-    pub fn Jim_String(objPtr: *mut Jim_Obj) -> *const ::std::os::raw::c_char;
-
-    pub fn Jim_GetString(
-        objPtr: *mut Jim_Obj,
-        lenPtr: *mut ::std::os::raw::c_int,
-    ) -> *const ::std::os::raw::c_char;
-
-    // ALLOC the tree?
-    // get size of ref
-    // allocate that
-    // cast ref transmute into void ptr
-    pub fn Jim_Alloc(size: ::std::os::raw::c_int) -> *mut ::std::os::raw::c_void;
-
- */
 
 use std::ffi::{CStr, CString};
 use std::mem;
@@ -44,7 +29,7 @@ pub unsafe extern "C" fn db_init(
         println!("you must pass 2 arguments");
         return JIM_ERR as c_int;
     }
-    let name_ptr = objv.offset(1);
+    let db_cmd_name_ptr = objv.offset(1);
     let path_ptr = objv.offset(2);
 
     // bytes is a field defined thus, so we double dereference it
@@ -53,39 +38,82 @@ pub unsafe extern "C" fn db_init(
 
     println!("loading db at path {:?}", path);
     let config = ConfigBuilder::new().path(path).build();
-    let mut tree = Tree::start(config).unwrap();
+    let tree = Tree::start(config).unwrap();
 
     let boxed: *mut Tree = Box::into_raw(Box::new(tree));
     let sz = std::mem::size_of::<*mut Tree>();
+
+    // Use Jim's allocator, then write over it with our own heap pointer.
+    // Is this what you're supposed to do?
+    #[allow(unused_assignments)]
     let mut ttptr = Jim_Alloc(sz as c_int);
     ttptr = std::mem::transmute::<*mut Tree, *mut c_void>(boxed);
 
-    let name = CStr::from_ptr((**name_ptr).bytes);
-    Jim_CreateCommand(interp, name.as_ptr(), Some(wrapper), ttptr, None)
+    Jim_CreateCommand(interp, (**db_cmd_name_ptr).bytes, Some(database_cmd), ttptr, None)
 }
 
-pub unsafe extern "C" fn wrapper(
+/// This function is the procedural implementation that that backs the database
+/// command created by invocations of our `sled` command. For example, when
+/// `sled db /some/path` is called, a db command is created, and calls to db
+/// are routed to this function.
+pub unsafe extern "C" fn database_cmd(
     interp: *mut Jim_Interp,
     objc: c_int,
     objv: *const *mut Jim_Obj,
 ) -> c_int {
-    let mut tree = (*interp).cmdPrivData as *mut Tree;
+    let cmd_len = objc.clone();
+    let usage = "one of: close, put, get, scan";
+    if cmd_len < 2 {
+        println!("{}", usage);
+        return JIM_ERR as c_int
+    }
     let mut v: Vec<*const *mut Jim_Obj> = Vec::new();
     for i in 0..objc as isize {
+        //println!("COMMAND LINE: {}", i); 
+        // dbg_obj(objv.offset(i));
         v.push(objv.offset(i));
     }
-    dbg_interp(interp);
-    db_cmd(&mut(*tree), v);
-    JIM_OK as c_int
-}
+    // 0 is our own command; match our first argument: 1 
+    match CStr::from_ptr((**v[1]).bytes).to_str().unwrap() {
+        "close" => {
+             Jim_Free((*interp).cmdPrivData);
+             let cmd_name = (**v[0]).bytes;
+             Jim_DeleteCommand(interp, cmd_name);
+             return JIM_OK as c_int;
+        },
+        "put" => {
+            if cmd_len != 4 {
+                println!("put takes two args: key, value");
+                return JIM_ERR as c_int;
+            }
+            let key = CStr::from_ptr((**v[2]).bytes).to_bytes();
+            let value = CStr::from_ptr((**v[3]).bytes).to_bytes();
 
-fn db_cmd(tree: &mut Tree, cmd_line: Vec<*const *mut Jim_Obj>) {
+            // Note the outer parens here. We cast *mut c_void to *mut Tree, and 
+            // reborrow to &mut Tree, a regular reference. See:
+            // https://doc.rust-lang.org/std/mem/fn.transmute.html#alternatives
+            let tree = &mut *((*interp).cmdPrivData as *mut Tree);
+            tree.set(key.to_vec(), value.to_vec());
 
-    // types encountered:
-    // command, source, dict, list
-    for item in cmd_line {
-        dbg_obj(item);
+        },
+        "get" => {
+            if cmd_len != 3 {
+                println!("get takes one arg: key");
+                return JIM_ERR as c_int;
+            }
+            let key = CStr::from_ptr((**v[2]).bytes).to_bytes();
+            let tree = &mut *((*interp).cmdPrivData as *mut Tree);
+            if let Ok(Some(val)) = tree.get(key) {
+                println!("val: {:?}", val);
+                let s = CString::new(val).unwrap();
+                Jim_SetResultFormatted(interp, s.as_ptr());
+                return JIM_OK as c_int;
+            }
+        },
+        _ => {},
     }
+    //dbg_interp(interp);
+    JIM_OK as c_int
 }
 
 fn dbg_interp(interp: *mut Jim_Interp) {
@@ -94,7 +122,6 @@ fn dbg_interp(interp: *mut Jim_Interp) {
         let cur_script = *(*interp).currentScriptObj;
         dbg_obj_struct(&cur_script, "cur_script");
         println!("eval depth: {:?}", unsafe {(*interp).evalDepth});
-        //println!("current script: {:?}", cur_script);
     }
 }
 
@@ -107,7 +134,7 @@ fn dbg_obj_struct(obj: &Jim_Obj, msg: &str) {
 fn dbg_obj(obj: *const *mut Jim_Obj) {
         println!("\t*const *mut OBJECT: {:?}", obj);
         println!("typePtr: {:?}", unsafe {CStr::from_ptr((*((**obj).typePtr)).name )});
-        println!("bytes: {:?}", unsafe {CStr::from_ptr(((**obj).bytes) )});
+        println!("bytes: {:?}", unsafe {CStr::from_ptr((**obj).bytes )});
 }
 
 #[no_mangle]

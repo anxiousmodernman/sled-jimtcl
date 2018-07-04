@@ -8,6 +8,7 @@ crate-type = ["dylib"]
 
 [dependencies]
 sled = "*"
+bincode = "*"
 
 [build-dependencies]
 bindgen = "*"

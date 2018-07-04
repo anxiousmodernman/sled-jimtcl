@@ -9,7 +9,8 @@ Install Jim Tcl libraries and the `jimsh` interpreter by cloning and running
 ```
 git clone https://github.com/msteveb/jimtcl
 cd jimtcl
-./configure
+# configure some useful extensions
+./configure --with-ext="oo tree binary sqlite3" --enable-utf8 --ipv6 --disable-docs
 make
 sudo make install
 jimsh  # the jim tcl interpreter

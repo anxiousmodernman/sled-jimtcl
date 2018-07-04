@@ -13,19 +13,13 @@ sled db .test.db
 # The db command holds a reference to the open database. Call subcommands on
 # db to do stuff with the database. TODO nothing's implemented yet, we're just
 # debugging/printing stuff for now.
-db blah {
-    foo doo doo
-    doo da
-}
 
 proc nested {} {
     # db captured is captured from the surrounding env. Behaves the same.
-     db blah {
-         blah blah blah
-         blah blah
-     }
-     # some other command
-     puts what
+    db put key1 val1
+    set a [db get key1]
+    # some other command
+    puts "got $a"
 }
 
 # Call the proc with the captured env.

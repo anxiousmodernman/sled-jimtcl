@@ -4,3 +4,7 @@ Cargo.lock
 
 # test database dir
 .test.db
+
+# lennart's container thing
+mkosi*
+.mkosi*
