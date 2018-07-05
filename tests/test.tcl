@@ -24,3 +24,15 @@ proc nested {} {
 
 # Call the proc with the captured env.
 nested
+
+# test scanning
+
+set outer 1
+db put xx:a foo
+db put xx:b baz 
+db put xx:c zaz
+db scan xx: injected {
+    incr outer
+    puts $outer
+    puts $injected
+}
