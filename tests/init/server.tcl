@@ -10,27 +10,27 @@ if {[file exists $SOCKET]} {
     file delete $SOCKET
 }
 
-proc is_whitespace {s} {
-    set val [string length [string trim $s]]
-    puts "val: $val"
-    return $val
-}
-
 proc serve {path} {
     variable f {}
+    variable cmds [list]
     set f [socket unix.server $path]
+    fconfigure $f -buffering full -blocking 0
     $f readable {
         set client [$f accept]
+        $client buffering none
         puts "accepting conn..."
+        set expected 1
         set cmds [list]
-        while {[$client gets buf] > -1} {
-            if {[string length [string trim $buf]] > 0} {
-                puts "received: $buf"
-                set computed [eval $buf]
-                if {[string length [string trim $computed]] > 0} {
-                    puts "computed: $computed"
-                    $client puts $computed
-                }
+        $client gets buf
+        puts "buf: $buf"
+        switch [lindex [split $buf] 0] {
+            "db" {
+                puts "a db command"
+                set resp [eval $buf]
+                $client puts $resp
+            }
+            default {
+                $client puts OK
             }
         }
         $client close

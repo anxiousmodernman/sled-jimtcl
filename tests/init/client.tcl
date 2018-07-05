@@ -1,23 +1,21 @@
 #!/usr/bin/env jimsh
 
-set SOCKET /tmp/ipc.sock
 
-set client [socket unix $SOCKET]
-set msg [list db put foo baz]
-variable msg2 {
-    db put blah 1
-    db put blah 99
-    db get blah
+proc send_cmd { args } {
+    variable client
+    set client [socket unix /tmp/ipc.sock]
+    $client puts $args
+    $client flush
+    $client readable {
+        set reply [$client gets]
+        puts $reply
+        $client close
+    }
+    puts "waiting for reply..."
+    # waits until "done" variable changes or until handlers are removed
+    vwait done
 }
 
-$client puts $msg2
-$client flush
-puts "waiting for reply..."
-$client readable {
-    set reply [$client gets]
-    puts "reply $reply"
-    $client close
-}
+send_cmd db put foo baz 
+send_cmd db get foo 
 
-# waits until "done" variable changes or until handlers are removed
-vwait done
