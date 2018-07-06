@@ -96,7 +96,6 @@ pub unsafe extern "C" fn database_cmd(
             // https://doc.rust-lang.org/std/mem/fn.transmute.html#alternatives
             let tree = &mut *((*interp).cmdPrivData as *mut Tree);
             tree.set(key.to_vec(), value.to_vec());
-
         },
         "get" => {
             if cmd_len != 3 {
@@ -123,7 +122,6 @@ pub unsafe extern "C" fn database_cmd(
             let script = CStr::from_ptr((**v[4]).bytes).to_bytes();
             let script_obj = Jim_NewStringObj(interp, script.as_ptr() as *const c_char, script.len() as c_int);
             let tree = &mut *((*interp).cmdPrivData as *mut Tree);
-            println!("scanning prefix: {:?}", key);
             let mut iter = tree.scan(key.to_bytes());
 
             // When pulling values OUT of the database, we cannot assume they're null-term,
@@ -151,7 +149,6 @@ pub unsafe extern "C" fn database_cmd(
         }
         _ => {},
     }
-    //dbg_interp(interp);
     JIM_OK as c_int
 }
 
