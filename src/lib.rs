@@ -152,30 +152,6 @@ pub unsafe extern "C" fn database_cmd(
     JIM_OK as c_int
 }
 
-#[allow(unused)]
-fn dbg_interp(interp: *mut Jim_Interp) {
-    unsafe {
-        // cur_script is the _entire_ script we're running
-        let cur_script = *(*interp).currentScriptObj;
-        dbg_obj_struct(&cur_script, "cur_script");
-        println!("eval depth: {:?}", unsafe {(*interp).evalDepth});
-    }
-}
-
-#[allow(unused)]
-fn dbg_obj_struct(obj: &Jim_Obj, msg: &str) {
-        println!("\tOBJECT {:?}", msg);
-        println!("typePtr: {:?}", unsafe {CStr::from_ptr((*obj.typePtr).name )});
-        println!("bytes: {:?}", unsafe {CStr::from_ptr(obj.bytes)});
-}
-
-#[allow(unused)]
-fn dbg_obj(obj: *const *mut Jim_Obj) {
-        println!("\t*const *mut OBJECT: {:?}", obj);
-        println!("typePtr: {:?}", unsafe {CStr::from_ptr((*((**obj).typePtr)).name )});
-        println!("bytes: {:?}", unsafe {CStr::from_ptr((**obj).bytes )});
-}
-
 #[no_mangle]
 pub fn Jim_sledInit(interp: *mut Jim_Interp) -> c_int {
     let cmdName = CString::new("sled").unwrap();
