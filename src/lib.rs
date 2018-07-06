@@ -12,6 +12,8 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 use std::ffi::{CStr, CString};
 use std::mem;
+use std::string::ToString;
+use std::str;
 
 use std::os::raw::{c_char, c_int, c_void};
 
@@ -114,16 +116,22 @@ pub unsafe extern "C" fn database_cmd(
                 println!("scan takes 3 args: prefix, tempVar, and {{ script... }}");
                 return JIM_ERR as c_int;
             }
-            let key = CStr::from_ptr((**v[2]).bytes).to_bytes();
+            let key = CStr::from_ptr((**v[2]).bytes);
+            let prefix_matcher = key.clone().to_str().unwrap();
+            // tempVar must be one of: a list, a string
             let tempVar = CStr::from_ptr((**v[3]).bytes).to_bytes();
             let script = CStr::from_ptr((**v[4]).bytes).to_bytes();
             let script_obj = Jim_NewStringObj(interp, script.as_ptr() as *const c_char, script.len() as c_int);
             let tree = &mut *((*interp).cmdPrivData as *mut Tree);
-            let mut iter = tree.scan(key);
+            println!("scanning prefix: {:?}", key);
+            let mut iter = tree.scan(key.to_bytes());
 
             // When pulling values OUT of the database, we cannot assume they're null-term,
             // so we must use CString::new(vv), which handles this for us.
             while let Some(Ok((k, vv))) = iter.next() {
+                if !str::from_utf8(&k).unwrap().starts_with(prefix_matcher) {
+                    break;
+                };
                 // set stack var varName from db scan $prefix varName { ...code...}
                 // TODO turn script into Obj
                 let cloned = tempVar.clone();
@@ -140,14 +148,6 @@ pub unsafe extern "C" fn database_cmd(
                 Jim_SetVariable(interp, name_obj, value_obj);
                 Jim_Eval(interp, script.as_ptr() as *const c_char);
             }
-            
-//            let boxed_iter: *mut Iter = Box::into_raw(Box::new(iter));
-//            let mut ptr = Jim_Alloc(mem::size_of::<*mut Tree>() as c_int);
-//            let sized_ptr = mem::transmute::<*mut Iter, *mut c_void>(boxed_iter);
-//            ptr = sized_ptr;
-            // allocate and box a pointer
-            // just try boxing a pointer first
-            // create a command
         }
         _ => {},
     }
@@ -155,6 +155,7 @@ pub unsafe extern "C" fn database_cmd(
     JIM_OK as c_int
 }
 
+#[allow(unused)]
 fn dbg_interp(interp: *mut Jim_Interp) {
     unsafe {
         // cur_script is the _entire_ script we're running
@@ -164,12 +165,14 @@ fn dbg_interp(interp: *mut Jim_Interp) {
     }
 }
 
+#[allow(unused)]
 fn dbg_obj_struct(obj: &Jim_Obj, msg: &str) {
         println!("\tOBJECT {:?}", msg);
         println!("typePtr: {:?}", unsafe {CStr::from_ptr((*obj.typePtr).name )});
         println!("bytes: {:?}", unsafe {CStr::from_ptr(obj.bytes)});
 }
 
+#[allow(unused)]
 fn dbg_obj(obj: *const *mut Jim_Obj) {
         println!("\t*const *mut OBJECT: {:?}", obj);
         println!("typePtr: {:?}", unsafe {CStr::from_ptr((*((**obj).typePtr)).name )});

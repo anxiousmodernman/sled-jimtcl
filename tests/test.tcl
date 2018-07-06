@@ -23,16 +23,13 @@ proc nested {} {
 }
 
 # Call the proc with the captured env.
-nested
+# nested
 
 # test scanning
 
-set outer 1
-db put xx:a foo
-db put xx:b baz 
-db put xx:c zaz
-db scan xx: injected {
-    incr outer
-    puts $outer
-    puts $injected
+db put xx:aa foo
+db put xx:ab baz 
+db put aa:c zaz
+db scan xx theValue {
+    puts $theValue
 }
