@@ -1,19 +1,18 @@
 #![allow(non_upper_case_globals)]
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
-#![allow(unused_imports)]
 
 extern crate sled;
 
-use sled::{ConfigBuilder, Tree, Iter};
+use sled::{ConfigBuilder, Iter, Tree};
 
 // #include <jim.h>
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 use std::ffi::{CStr, CString};
 use std::mem;
-use std::string::ToString;
 use std::str;
+use std::string::ToString;
 
 use std::os::raw::{c_char, c_int, c_void};
 
@@ -51,13 +50,22 @@ pub unsafe extern "C" fn db_init(
     let mut ttptr = Jim_Alloc(sz as c_int);
     ttptr = std::mem::transmute::<*mut Tree, *mut c_void>(boxed);
 
-    Jim_CreateCommand(interp, (**db_cmd_name_ptr).bytes, Some(database_cmd), ttptr, None)
+    Jim_CreateCommand(
+        interp,
+        (**db_cmd_name_ptr).bytes,
+        Some(database_cmd),
+        ttptr,
+        None,
+    )
 }
+
+struct Error;
 
 /// This function is the procedural implementation that that backs the database
 /// command created by invocations of our `sled` command. For example, when
 /// `sled db /some/path` is called, a db command is created, and calls to db
 /// are routed to this function.
+#[no_mangle]
 pub unsafe extern "C" fn database_cmd(
     interp: *mut Jim_Interp,
     objc: c_int,
@@ -67,22 +75,33 @@ pub unsafe extern "C" fn database_cmd(
     let usage = "one of: close, put, get, scan";
     if cmd_len < 2 {
         println!("{}", usage);
-        return JIM_ERR as c_int
+        return JIM_ERR as c_int;
     }
     let mut v: Vec<*const *mut Jim_Obj> = Vec::new();
     for i in 0..objc as isize {
-        //println!("COMMAND LINE: {}", i); 
-        // dbg_obj(objv.offset(i));
         v.push(objv.offset(i));
     }
-    // 0 is our own command; match our first argument: 1 
+    // 0 is our own command; match our first argument: 1
     match CStr::from_ptr((**v[1]).bytes).to_str().unwrap() {
         "close" => {
-             Jim_Free((*interp).cmdPrivData);
-             let cmd_name = (**v[0]).bytes;
-             Jim_DeleteCommand(interp, cmd_name);
-             return JIM_OK as c_int;
-        },
+            Jim_Free((*interp).cmdPrivData);
+            let cmd_name = (**v[0]).bytes;
+            Jim_DeleteCommand(interp, cmd_name);
+            return JIM_OK as c_int;
+        }
+        "dump" => {
+            let tree = &mut *((*interp).cmdPrivData as *mut Tree);
+            let mut iter = tree.scan(b"");
+            while let Some(Ok((k, v))) = iter.next() {
+                //let key = CString::from_vec_unchecked(k);
+                //let value = CString::from_vec_unchecked(v);
+                let key = String::from_utf8(k);
+                let value = String::from_utf8(v);
+                // let key = CString::from_vec_unchecked(k);
+                // let value = CString::from_vec_unchecked(v);
+                println!("key: {:?} value: {:?}", key, value);
+            }
+        }
         "put" => {
             if cmd_len != 4 {
                 println!("put takes two args: key, value");
@@ -91,12 +110,12 @@ pub unsafe extern "C" fn database_cmd(
             let key = CStr::from_ptr((**v[2]).bytes).to_bytes();
             let value = CStr::from_ptr((**v[3]).bytes).to_bytes();
 
-            // Note the outer parens here. We cast *mut c_void to *mut Tree, and 
+            // Note the outer parens here. We cast *mut c_void to *mut Tree, and
             // reborrow to &mut Tree, a regular reference. See:
             // https://doc.rust-lang.org/std/mem/fn.transmute.html#alternatives
             let tree = &mut *((*interp).cmdPrivData as *mut Tree);
             tree.set(key.to_vec(), value.to_vec());
-        },
+        }
         "get" => {
             if cmd_len != 3 {
                 println!("get takes one arg: key");
@@ -109,24 +128,31 @@ pub unsafe extern "C" fn database_cmd(
                 Jim_SetResultFormatted(interp, s.as_ptr());
                 return JIM_OK as c_int;
             }
-        },
+        }
         "scan" => {
             if cmd_len != 5 {
+                // TODO: is there a better way to set err messages in Jim?
                 println!("scan takes 3 args: prefix, tempVar, and {{ script... }}");
                 return JIM_ERR as c_int;
             }
+            // db scan blah { k v } { puts $k $v }
             let key = CStr::from_ptr((**v[2]).bytes);
             let prefix_matcher = key.clone().to_str().unwrap();
             // tempVar must be one of: a list, a string
             let tempVar = CStr::from_ptr((**v[3]).bytes).to_bytes();
             let script = CStr::from_ptr((**v[4]).bytes).to_bytes();
-            let script_obj = Jim_NewStringObj(interp, script.as_ptr() as *const c_char, script.len() as c_int);
+            let script_obj = Jim_NewStringObj(
+                interp,
+                script.as_ptr() as *const c_char,
+                script.len() as c_int,
+            );
             let tree = &mut *((*interp).cmdPrivData as *mut Tree);
             let mut iter = tree.scan(key.to_bytes());
 
             // When pulling values OUT of the database, we cannot assume they're null-term,
             // so we must use CString::new(vv), which handles this for us.
             while let Some(Ok((k, vv))) = iter.next() {
+                // stop iterating
                 if !str::from_utf8(&k).unwrap().starts_with(prefix_matcher) {
                     break;
                 };
@@ -134,22 +160,38 @@ pub unsafe extern "C" fn database_cmd(
                 // TODO turn script into Obj
                 let cloned = tempVar.clone();
                 let name_obj = Jim_NewStringObj(
-                    interp, cloned.as_ptr() as *const c_char, cloned.len() as c_int);
+                    interp,
+                    cloned.as_ptr() as *const c_char,
+                    cloned.len() as c_int,
+                );
 
                 // we don't have null terminator so we need to add it here or nah?
                 let value_len: c_int = vv.len() as c_int; //  + 1;
                 let valued = CString::new(vv).expect("cannot make C string");
                 let cloned_tempVar = tempVar.clone();
-                let value_obj = Jim_NewStringObj(interp, valued.as_ptr() as *const c_char,
-                value_len);
+                let value_obj =
+                    Jim_NewStringObj(interp, valued.as_ptr() as *const c_char, value_len);
 
                 Jim_SetVariable(interp, name_obj, value_obj);
                 Jim_Eval(interp, script.as_ptr() as *const c_char);
             }
         }
-        _ => {},
+        _ => {}
     }
     JIM_OK as c_int
+}
+
+enum SledOp {
+    Put,
+    Get,
+    Scan,
+    Close,
+    Unknown,
+}
+
+enum ObjType {
+    List,
+    OneString,
 }
 
 #[no_mangle]

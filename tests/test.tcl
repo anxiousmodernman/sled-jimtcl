@@ -1,5 +1,9 @@
 #!/usr/bin/env jimsh
 
+# Global configs:
+# number of iterations for stress test. (lower for faster runs)
+set PUT_ITERS 1
+set STRESS_TEST 0
 
 # Remove our test database, if it exists
 set testdb .test.db
@@ -17,9 +21,7 @@ package require sled
 # name for our db command, but "db" seems right.
 sled db $testdb
 
-# The db command holds a reference to the open database. Call subcommands on
-# db to do stuff with the database. TODO nothing's implemented yet, we're just
-# debugging/printing stuff for now.
+set G foo
 
 proc nested {} {
     # db captured is captured from the surrounding env. Behaves the same.
@@ -39,6 +41,7 @@ set count 0
 db put xx:aa foo
 db put xx:ab baz 
 db put aa:c zaz
+
 db scan xx theValue {
     incr count
     puts $theValue
@@ -50,13 +53,23 @@ if {[expr $count != 2]} {
 
 
 puts "putting 10k keys"
-set result [time {
-   set count 0
-   while {[incr count] <= 10000} {
-       db put timed:insert:$count value
-   }
-} 10]
-puts "Stress test result"
-puts $result
+if {$STRESS_TEST} {
+  set result [time {
+     set count 0
+     while {[incr count] <= 10000} {
+         db put timed:insert:$count value
+     }
+  } $PUT_ITERS]
+  puts "Stress test result"
+  puts $result
+}
 
+proc dont_segfault {} {
+    variable a_null {}
+    global G
+    db put beginning$G $a_null
+    puts "don't segfault"
+}
+
+dont_segfault
 
