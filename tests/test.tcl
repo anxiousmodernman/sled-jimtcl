@@ -3,7 +3,7 @@
 # Global configs:
 # number of iterations for stress test. (lower for faster runs)
 set PUT_ITERS 1
-set STRESS_TEST 0
+set STRESS_TEST 1
 
 # Remove our test database, if it exists
 set testdb .test.db
@@ -32,7 +32,11 @@ proc nested {} {
 }
 
 # Call the proc with the captured env.
-# nested
+nested
+
+if {[db get key1] != "val1" } {
+    error "db should be captured by nested proc closure"
+}
 
 # test scanning
 
@@ -68,7 +72,12 @@ proc dont_segfault {} {
     variable a_null {}
     global G
     db put beginning$G $a_null
-    puts "don't segfault"
+    db put beginning1 $a_null
+    db put beginning2 $a_null
+    db put beginning3 $a_null
+    db put beginning4 $a_null
+    db put beginning5 $a_null
+    db put beginning6 $a_null
 }
 
 dont_segfault

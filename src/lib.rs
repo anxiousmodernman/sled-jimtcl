@@ -39,7 +39,7 @@ pub unsafe extern "C" fn db_init(
 
     println!("loading db at path {:?}", path);
     let config = ConfigBuilder::new().path(path).build();
-    let tree = Tree::start(config).unwrap();
+    let tree = Tree::start(config).expect("error loading sled database");
 
     let boxed: *mut Tree = Box::into_raw(Box::new(tree));
     let sz = std::mem::size_of::<*mut Tree>();
@@ -107,14 +107,17 @@ pub unsafe extern "C" fn database_cmd(
                 println!("put takes two args: key, value");
                 return JIM_ERR as c_int;
             }
-            let key = CStr::from_ptr((**v[2]).bytes).to_bytes();
-            let value = CStr::from_ptr((**v[3]).bytes).to_bytes();
+
+            let key = CStr::from_ptr(get_string(&mut **v[2])).to_bytes();
+            let value = CStr::from_ptr(get_string(&mut **v[3])).to_bytes();
 
             // Note the outer parens here. We cast *mut c_void to *mut Tree, and
             // reborrow to &mut Tree, a regular reference. See:
             // https://doc.rust-lang.org/std/mem/fn.transmute.html#alternatives
             let tree = &mut *((*interp).cmdPrivData as *mut Tree);
-            tree.set(key.to_vec(), value.to_vec());
+            if tree.set(key.to_vec(), value.to_vec()).is_err() {
+                return JIM_ERR as c_int;
+            };
         }
         "get" => {
             if cmd_len != 3 {
@@ -136,7 +139,7 @@ pub unsafe extern "C" fn database_cmd(
                 return JIM_ERR as c_int;
             }
             // db scan blah { k v } { puts $k $v }
-            let key = CStr::from_ptr((**v[2]).bytes);
+            let key = CStr::from_ptr(get_string(&mut **v[2]));
             let prefix_matcher = key.clone().to_str().unwrap();
             // tempVar must be one of: a list, a string
             let tempVar = CStr::from_ptr((**v[3]).bytes).to_bytes();
@@ -179,6 +182,20 @@ pub unsafe extern "C" fn database_cmd(
         _ => {}
     }
     JIM_OK as c_int
+}
+
+/// A wrapper for Jim_GetString. We don't care about the length pointer, because
+/// the CStr functions check for proper formatting already. We need to use
+/// Jim_GetString because the bytes field of a Jim_Obj may be in an invalid
+/// state (e.g. NULL), and the Jim_GetString implementation lazily calls
+/// an internal function pointer on Jim_Obj to rebuild the string representation.
+/// If use the null bytes, we segfault.
+fn get_string(jobj: &mut Jim_Obj) -> *const c_char {
+    if !jobj.bytes.is_null() {
+        return jobj.bytes;
+    }
+    let length: i32 = 0;
+    unsafe { Jim_GetString(jobj as *mut Jim_Obj, length as *mut c_int) }
 }
 
 enum SledOp {
