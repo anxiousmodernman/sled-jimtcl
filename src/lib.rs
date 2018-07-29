@@ -142,14 +142,14 @@ pub unsafe extern "C" fn database_cmd(
             let key = CStr::from_ptr(get_string(&mut **v[2]));
             let prefix_matcher = key.clone().to_str().unwrap();
             // tempVar must be one of: a list, a string
-            let tempVar = CStr::from_ptr((**v[3]).bytes).to_bytes();
-            let script = CStr::from_ptr((**v[4]).bytes).to_bytes();
+            let tempVar = CStr::from_ptr(get_string(&mut **v[3])).to_bytes();
+            let script = CStr::from_ptr(get_string(&mut **v[4])).to_bytes();
             let script_obj = Jim_NewStringObj(
                 interp,
                 script.as_ptr() as *const c_char,
                 script.len() as c_int,
             );
-            let tree = &mut *((*interp).cmdPrivData as *mut Tree);
+            let tree: &Tree = from_cmd_private_data(interp);
             let mut iter = tree.scan(key.to_bytes());
 
             // When pulling values OUT of the database, we cannot assume they're null-term,
@@ -184,31 +184,28 @@ pub unsafe extern "C" fn database_cmd(
     JIM_OK as c_int
 }
 
+/// Takes a reference to a T off of the cmdPrivData field of Jim_Interp.
+fn from_cmd_private_data<'a, T>(interp: *mut Jim_Interp) -> &'a T {
+    unsafe {
+        if (*interp).cmdPrivData.is_null() {
+            panic!("cmdPrivData is null");
+        }
+        // cannot move out of dereference of raw pointer
+        let obj = &mut *((*interp).cmdPrivData as *mut T);
+        return obj;
+    }
+}
+
 /// A wrapper for Jim_GetString. We don't care about the length pointer, because
-/// the CStr functions check for proper formatting already. We need to use
-/// Jim_GetString because the bytes field of a Jim_Obj may be in an invalid
-/// state (e.g. NULL), and the Jim_GetString implementation lazily calls
-/// an internal function pointer on Jim_Obj to rebuild the string representation.
-/// If use the null bytes, we segfault.
+/// the CStr functions do not require it. The Jim_GetString implementation
+/// lazily calls an internal function pointer on Jim_Obj to rebuild the string representation.
+/// If we were to use the null bytes, we would segfault.
 fn get_string(jobj: &mut Jim_Obj) -> *const c_char {
     if !jobj.bytes.is_null() {
         return jobj.bytes;
     }
     let length: i32 = 0;
     unsafe { Jim_GetString(jobj as *mut Jim_Obj, length as *mut c_int) }
-}
-
-enum SledOp {
-    Put,
-    Get,
-    Scan,
-    Close,
-    Unknown,
-}
-
-enum ObjType {
-    List,
-    OneString,
 }
 
 #[no_mangle]
