@@ -65,16 +65,16 @@ pub unsafe extern "C" fn database_cmd(
         println!("one of: close, put, get, scan");
         return JIM_ERR as c_int;
     }
-    let mut v: Vec<*const *mut Jim_Obj> = Vec::new();
+    let mut args: Vec<*const *mut Jim_Obj> = Vec::new();
     for i in 0..objc as isize {
-        v.push(objv.offset(i));
+        args.push(objv.offset(i));
     }
     // 0 is our the db command, conventionally "db"; match first argument as the subcommand
-    match CStr::from_ptr(get_string(&mut **v[1])).to_str().unwrap() {
+    match CStr::from_ptr(get_string(&mut **args[1])).to_str().unwrap() {
         // db close
         "close" => {
             Jim_Free((*interp).cmdPrivData);
-            let cmd_name = get_string(&mut **v[0]);
+            let cmd_name = get_string(&mut **args[0]);
             Jim_DeleteCommand(interp, cmd_name);
             return JIM_OK as c_int;
         }
@@ -84,7 +84,7 @@ pub unsafe extern "C" fn database_cmd(
                 println!("usage: db del key");
                 return JIM_ERR as c_int;
             }
-            let key = CStr::from_ptr(get_string(&mut **v[2])).to_bytes();
+            let key = CStr::from_ptr(get_string(&mut **args[2])).to_bytes();
             let tree: &Tree = from_cmd_private_data(interp);
             tree.del(key).expect("error: del failed");
         }
@@ -98,27 +98,13 @@ pub unsafe extern "C" fn database_cmd(
                 println!("key: {:?} value: {:?}", key, value);
             }
         }
-        // db put key value
-        "put" => {
-            if cmd_len != 4 {
-                println!("put takes two args: key, value");
-                return JIM_ERR as c_int;
-            }
-
-            let key = CStr::from_ptr(get_string(&mut **v[2])).to_bytes();
-            let value = CStr::from_ptr(get_string(&mut **v[3])).to_bytes();
-            let tree: &Tree = from_cmd_private_data(interp);
-            if tree.set(key.to_vec(), value.to_vec()).is_err() {
-                return JIM_ERR as c_int;
-            };
-        }
         // db get key; returns value
         "get" => {
             if cmd_len != 3 {
                 println!("get takes one arg: key");
                 return JIM_ERR as c_int;
             }
-            let key = CStr::from_ptr(get_string(&mut **v[2])).to_bytes();
+            let key = CStr::from_ptr(get_string(&mut **args[2])).to_bytes();
             let tree: &Tree = from_cmd_private_data(interp);
             if let Ok(Some(val)) = tree.get(key) {
                 let s = CString::new(val).unwrap();
@@ -126,6 +112,21 @@ pub unsafe extern "C" fn database_cmd(
                 return JIM_OK as c_int;
             }
         }
+        // db put key value
+        "put" => {
+            if cmd_len != 4 {
+                println!("put takes two args: key, value");
+                return JIM_ERR as c_int;
+            }
+
+            let key = CStr::from_ptr(get_string(&mut **args[2])).to_bytes();
+            let value = CStr::from_ptr(get_string(&mut **args[3])).to_bytes();
+            let tree: &Tree = from_cmd_private_data(interp);
+            if tree.set(key.to_vec(), value.to_vec()).is_err() {
+                return JIM_ERR as c_int;
+            };
+        }
+        // db scan key { k v } { puts $k $v }
         "scan" => {
             if cmd_len != 5 {
                 // TODO: is there a better way to set err messages in Jim?
@@ -133,10 +134,10 @@ pub unsafe extern "C" fn database_cmd(
                 return JIM_ERR as c_int;
             }
             // db scan blah { k v } { puts $k $v }
-            let key = CStr::from_ptr(get_string(&mut **v[2]));
+            let key = CStr::from_ptr(get_string(&mut **args[2]));
             let prefix_matcher = key.clone().to_str().unwrap();
             // tempVar must be one of: a list, a string
-            let kv_vars: Vec<&str> = CStr::from_ptr(get_string(&mut **v[3]))
+            let kv_vars: Vec<&str> = CStr::from_ptr(get_string(&mut **args[3]))
                 .to_str()
                 .unwrap()
                 .split_whitespace()
@@ -149,20 +150,22 @@ pub unsafe extern "C" fn database_cmd(
                 return JIM_ERR as c_int;
             }
 
-            let script = CStr::from_ptr(get_string(&mut **v[4])).to_bytes();
+            let script = CStr::from_ptr(get_string(&mut **args[4])).to_bytes();
             let tree: &Tree = from_cmd_private_data(interp);
             let mut iter = tree.scan(key.to_bytes());
 
-            while let Some(Ok((k, vv))) = iter.next() {
+            while let Some(Ok((k, v))) = iter.next() {
                 // stop iterating
                 if !str::from_utf8(&k).unwrap().starts_with(prefix_matcher) {
                     break;
                 };
-                // set stack var varName from db scan $prefix varName { ...code...}
+                // set stack vars k and v from db scan prefix { k v } { script... }
+                // and then eval the script
                 set_interp_var(interp, kv_vars[0], k);
-                set_interp_var(interp, kv_vars[1], vv);
+                set_interp_var(interp, kv_vars[1], v);
                 Jim_Eval(interp, script.as_ptr() as *const c_char);
             }
+            // TODO need to remove stack vars here?
         }
         _ => {}
     }
