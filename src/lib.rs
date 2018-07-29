@@ -9,8 +9,10 @@ include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
 use sled::{ConfigBuilder, Tree};
 use std::ffi::{CStr, CString};
+use std::fs;
 use std::mem;
 use std::os::raw::{c_char, c_int, c_void};
+use std::path::Path;
 use std::str;
 
 /// Our main command. In Tcl, when call "sled" command, we are calling this
@@ -30,9 +32,12 @@ pub unsafe extern "C" fn db_init(
     let db_cmd_name = objv.offset(1);
     let path_ptr = objv.offset(2);
 
-    let path = CStr::from_ptr(get_string(&mut **path_ptr))
-        .to_str()
-        .unwrap();
+    // canonicalize path to give us an absolute path
+    let path = fs::canonicalize(Path::new(
+        CStr::from_ptr(get_string(&mut **path_ptr))
+            .to_str()
+            .unwrap(),
+    )).expect("could not canonicalize path");
 
     let config = ConfigBuilder::new().path(path).build();
     let tree = Tree::start(config).expect("error loading sled database");
@@ -90,12 +95,28 @@ pub unsafe extern "C" fn database_cmd(
         }
         // db dump
         "dump" => {
-            let tree = &mut *((*interp).cmdPrivData as *mut Tree);
+            let tree: &Tree = from_cmd_private_data(interp);
             let mut iter = tree.scan(b"");
             while let Some(Ok((k, v))) = iter.next() {
                 let key = String::from_utf8(k);
                 let value = String::from_utf8(v);
                 println!("key: {:?} value: {:?}", key, value);
+            }
+        }
+        // db exist key
+        "exist" => {
+            if cmd_len != 3 {
+                println!("exist takes one arg: key");
+                return JIM_ERR as c_int;
+            }
+            let tree: &Tree = from_cmd_private_data(interp);
+            let key = CStr::from_ptr(get_string(&mut **args[2])).to_bytes();
+            if let Ok(Some(_)) = tree.get(key) {
+                let s = CString::new("1").unwrap();
+                Jim_SetResultFormatted(interp, s.as_ptr());
+            } else {
+                let s = CString::new("0").unwrap();
+                Jim_SetResultFormatted(interp, s.as_ptr());
             }
         }
         // db get key; returns value
@@ -118,7 +139,6 @@ pub unsafe extern "C" fn database_cmd(
                 println!("put takes two args: key, value");
                 return JIM_ERR as c_int;
             }
-
             let key = CStr::from_ptr(get_string(&mut **args[2])).to_bytes();
             let value = CStr::from_ptr(get_string(&mut **args[3])).to_bytes();
             let tree: &Tree = from_cmd_private_data(interp);
