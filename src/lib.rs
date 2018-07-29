@@ -69,14 +69,26 @@ pub unsafe extern "C" fn database_cmd(
     for i in 0..objc as isize {
         v.push(objv.offset(i));
     }
-    // 0 is our own db command; match our first argument: 1
+    // 0 is our the db command, conventionally "db"; match first argument as the subcommand
     match CStr::from_ptr(get_string(&mut **v[1])).to_str().unwrap() {
+        // db close
         "close" => {
             Jim_Free((*interp).cmdPrivData);
             let cmd_name = get_string(&mut **v[0]);
             Jim_DeleteCommand(interp, cmd_name);
             return JIM_OK as c_int;
         }
+        // db del somekey
+        "del" => {
+            if cmd_len != 3 {
+                println!("usage: db del key");
+                return JIM_ERR as c_int;
+            }
+            let key = CStr::from_ptr(get_string(&mut **v[2])).to_bytes();
+            let tree: &Tree = from_cmd_private_data(interp);
+            tree.del(key).expect("error: del failed");
+        }
+        // db dump
         "dump" => {
             let tree = &mut *((*interp).cmdPrivData as *mut Tree);
             let mut iter = tree.scan(b"");
@@ -86,6 +98,7 @@ pub unsafe extern "C" fn database_cmd(
                 println!("key: {:?} value: {:?}", key, value);
             }
         }
+        // db put key value
         "put" => {
             if cmd_len != 4 {
                 println!("put takes two args: key, value");
@@ -94,14 +107,12 @@ pub unsafe extern "C" fn database_cmd(
 
             let key = CStr::from_ptr(get_string(&mut **v[2])).to_bytes();
             let value = CStr::from_ptr(get_string(&mut **v[3])).to_bytes();
-
-            // Note the outer parens here. We cast *mut c_void to *mut Tree, and
-            // reborrow to &mut Tree, a regular reference. See:
             let tree: &Tree = from_cmd_private_data(interp);
             if tree.set(key.to_vec(), value.to_vec()).is_err() {
                 return JIM_ERR as c_int;
             };
         }
+        // db get key; returns value
         "get" => {
             if cmd_len != 3 {
                 println!("get takes one arg: key");
