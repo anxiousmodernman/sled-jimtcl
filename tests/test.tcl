@@ -2,8 +2,8 @@
 
 # Global configs:
 # number of iterations for stress test. (lower for faster runs)
-set PUT_ITERS 1
 set STRESS_TEST 1
+set TIMED_ITERS 1
 
 # Remove our test database, if it exists
 set testdb .test.db
@@ -46,9 +46,9 @@ db put xx:aa foo
 db put xx:ab baz 
 db put aa:c zaz
 
-db scan xx theValue {
+db scan xx { k v } {
     incr count
-    puts $theValue
+    puts "k: $k v: $v"
 }
 puts "count is $count"
 if {[expr $count != 2]} {
@@ -56,29 +56,32 @@ if {[expr $count != 2]} {
 }
 
 
-puts "putting 10k keys"
 if {$STRESS_TEST} {
-  set result [time {
-     set count 0
-     while {[incr count] <= 10000} {
-         db put timed:insert:$count value
-     }
-  } $PUT_ITERS]
-  puts "Stress test result"
-  puts $result
+    puts "stress tests..."
+
+    set result [time {
+        set count 0
+        while {[incr count] <= 10000} {
+            db put timed:insert:$count value
+        }
+    } $TIMED_ITERS]
+    puts "Putting 10000 keys:"
+    puts $result
+
+    set result [time {
+        db scan timed:insert: { k v } {}
+    } $TIMED_ITERS]
+    puts "Scanning 10000 keys:"
+    puts $result
+  
+    set result [time {
+        db close
+        sled db $testdb
+    } 100]
+    puts "Consecutive db open/closes:"
+    puts $result
 }
 
-proc dont_segfault {} {
-    variable a_null {}
-    global G
-    db put beginning$G $a_null
-    db put beginning1 $a_null
-    db put beginning2 $a_null
-    db put beginning3 $a_null
-    db put beginning4 $a_null
-    db put beginning5 $a_null
-    db put beginning6 $a_null
-}
-
-dont_segfault
+# clean up test db
+file delete -force $testdb
 

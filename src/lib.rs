@@ -4,17 +4,14 @@
 
 extern crate sled;
 
-use sled::{ConfigBuilder, Iter, Tree};
-
 // #include <jim.h>
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
+use sled::{ConfigBuilder, Tree};
 use std::ffi::{CStr, CString};
 use std::mem;
-use std::str;
-use std::string::ToString;
-
 use std::os::raw::{c_char, c_int, c_void};
+use std::str;
 
 /// Our main command. In Tcl, when call "sled" command, we are calling this
 /// function. We expect to be called with "sled dbname /path/to/db". This function
@@ -30,36 +27,28 @@ pub unsafe extern "C" fn db_init(
         println!("you must pass 2 arguments");
         return JIM_ERR as c_int;
     }
-    let db_cmd_name_ptr = objv.offset(1);
+    let db_cmd_name = objv.offset(1);
     let path_ptr = objv.offset(2);
 
-    // bytes is a field defined thus, so we double dereference it
-    // pub bytes: *mut ::std::os::raw::c_char,
-    let path = CStr::from_ptr((**path_ptr).bytes).to_str().unwrap();
+    let path = CStr::from_ptr(get_string(&mut **path_ptr))
+        .to_str()
+        .unwrap();
 
-    println!("loading db at path {:?}", path);
     let config = ConfigBuilder::new().path(path).build();
     let tree = Tree::start(config).expect("error loading sled database");
-
     let boxed: *mut Tree = Box::into_raw(Box::new(tree));
-    let sz = std::mem::size_of::<*mut Tree>();
 
-    // Use Jim's allocator, then write over it with our own heap pointer.
-    // Is this what you're supposed to do?
-    #[allow(unused_assignments)]
-    let mut ttptr = Jim_Alloc(sz as c_int);
-    ttptr = std::mem::transmute::<*mut Tree, *mut c_void>(boxed);
+    // Make a void pointer for C
+    let ttptr = std::mem::transmute::<*mut Tree, *mut c_void>(boxed);
 
     Jim_CreateCommand(
         interp,
-        (**db_cmd_name_ptr).bytes,
+        get_string(&mut **db_cmd_name),
         Some(database_cmd),
         ttptr,
         None,
     )
 }
-
-struct Error;
 
 /// This function is the procedural implementation that that backs the database
 /// command created by invocations of our `sled` command. For example, when
@@ -108,8 +97,7 @@ pub unsafe extern "C" fn database_cmd(
 
             // Note the outer parens here. We cast *mut c_void to *mut Tree, and
             // reborrow to &mut Tree, a regular reference. See:
-            // https://doc.rust-lang.org/std/mem/fn.transmute.html#alternatives
-            let tree = &mut *((*interp).cmdPrivData as *mut Tree);
+            let tree: &Tree = from_cmd_private_data(interp);
             if tree.set(key.to_vec(), value.to_vec()).is_err() {
                 return JIM_ERR as c_int;
             };
@@ -119,8 +107,8 @@ pub unsafe extern "C" fn database_cmd(
                 println!("get takes one arg: key");
                 return JIM_ERR as c_int;
             }
-            let key = CStr::from_ptr((**v[2]).bytes).to_bytes();
-            let tree = &mut *((*interp).cmdPrivData as *mut Tree);
+            let key = CStr::from_ptr(get_string(&mut **v[2])).to_bytes();
+            let tree: &Tree = from_cmd_private_data(interp);
             if let Ok(Some(val)) = tree.get(key) {
                 let s = CString::new(val).unwrap();
                 Jim_SetResultFormatted(interp, s.as_ptr());
@@ -130,46 +118,38 @@ pub unsafe extern "C" fn database_cmd(
         "scan" => {
             if cmd_len != 5 {
                 // TODO: is there a better way to set err messages in Jim?
-                println!("scan takes 3 args: prefix, tempVar, and {{ script... }}");
+                println!("error: scan takes 3 args: prefix, key-val list, and {{ script }}");
                 return JIM_ERR as c_int;
             }
             // db scan blah { k v } { puts $k $v }
             let key = CStr::from_ptr(get_string(&mut **v[2]));
             let prefix_matcher = key.clone().to_str().unwrap();
             // tempVar must be one of: a list, a string
-            let tempVar = CStr::from_ptr(get_string(&mut **v[3])).to_bytes();
+            let kv_vars: Vec<&str> = CStr::from_ptr(get_string(&mut **v[3]))
+                .to_str()
+                .unwrap()
+                .split_whitespace()
+                .collect();
+
+            if kv_vars.len() != 2 {
+                println!(
+                    "error: the 2nd argument to scan must be a 2-item list of the form {{ key value }}"
+                );
+                return JIM_ERR as c_int;
+            }
+
             let script = CStr::from_ptr(get_string(&mut **v[4])).to_bytes();
-            let script_obj = Jim_NewStringObj(
-                interp,
-                script.as_ptr() as *const c_char,
-                script.len() as c_int,
-            );
             let tree: &Tree = from_cmd_private_data(interp);
             let mut iter = tree.scan(key.to_bytes());
 
-            // When pulling values OUT of the database, we cannot assume they're null-term,
-            // so we must use CString::new(vv), which handles this for us.
             while let Some(Ok((k, vv))) = iter.next() {
                 // stop iterating
                 if !str::from_utf8(&k).unwrap().starts_with(prefix_matcher) {
                     break;
                 };
                 // set stack var varName from db scan $prefix varName { ...code...}
-                // TODO turn script into Obj
-                let cloned = tempVar.clone();
-                let name_obj = Jim_NewStringObj(
-                    interp,
-                    cloned.as_ptr() as *const c_char,
-                    cloned.len() as c_int,
-                );
-
-                let value_len: c_int = vv.len() as c_int;
-                let valued = CString::new(vv).expect("cannot make C string");
-                let cloned_tempVar = tempVar.clone();
-                let value_obj =
-                    Jim_NewStringObj(interp, valued.as_ptr() as *const c_char, value_len);
-
-                Jim_SetVariable(interp, name_obj, value_obj);
+                set_interp_var(interp, kv_vars[0], k);
+                set_interp_var(interp, kv_vars[1], vv);
                 Jim_Eval(interp, script.as_ptr() as *const c_char);
             }
         }
@@ -179,6 +159,7 @@ pub unsafe extern "C" fn database_cmd(
 }
 
 /// Takes a reference to a T off of the cmdPrivData field of Jim_Interp.
+/// See: https://doc.rust-lang.org/std/mem/fn.transmute.html#alternatives
 fn from_cmd_private_data<'a, T>(interp: *mut Jim_Interp) -> &'a T {
     unsafe {
         if (*interp).cmdPrivData.is_null() {
@@ -190,10 +171,18 @@ fn from_cmd_private_data<'a, T>(interp: *mut Jim_Interp) -> &'a T {
     }
 }
 
+unsafe fn set_interp_var(interp: *mut Jim_Interp, name: &str, value: Vec<u8>) {
+    let name_obj = Jim_NewStringObj(interp, name.as_ptr() as *const c_char, name.len() as c_int);
+    let value_len: c_int = value.len() as c_int;
+    let valued = CString::new(value).expect("cannot make C string");
+    let value_obj = Jim_NewStringObj(interp, valued.as_ptr() as *const c_char, value_len);
+    Jim_SetVariable(interp, name_obj, value_obj);
+}
+
 /// A wrapper for Jim_GetString. We don't care about the length pointer, because
 /// the CStr functions do not require it. The Jim_GetString implementation
-/// lazily calls an internal function pointer on Jim_Obj to rebuild the string representation.
-/// If we were to use the null bytes, we would segfault.
+/// lazily calls an internal function pointer on the Jim_Obj to rebuild its
+/// string representation. If we were to use the null bytes, we would segfault.
 fn get_string(jobj: &mut Jim_Obj) -> *const c_char {
     if !jobj.bytes.is_null() {
         return jobj.bytes;
@@ -225,4 +214,10 @@ mod tests {
     fn it_works() {
         assert_eq!(2 + 2, 4);
     }
+
+    // TODO tests:
+    // get_string
+    // from_cmd_private_data
+    //
+
 }
