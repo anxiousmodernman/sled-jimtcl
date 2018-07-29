@@ -72,20 +72,19 @@ pub unsafe extern "C" fn database_cmd(
     objv: *const *mut Jim_Obj,
 ) -> c_int {
     let cmd_len = objc.clone();
-    let usage = "one of: close, put, get, scan";
     if cmd_len < 2 {
-        println!("{}", usage);
+        println!("one of: close, put, get, scan");
         return JIM_ERR as c_int;
     }
     let mut v: Vec<*const *mut Jim_Obj> = Vec::new();
     for i in 0..objc as isize {
         v.push(objv.offset(i));
     }
-    // 0 is our own command; match our first argument: 1
-    match CStr::from_ptr((**v[1]).bytes).to_str().unwrap() {
+    // 0 is our own db command; match our first argument: 1
+    match CStr::from_ptr(get_string(&mut **v[1])).to_str().unwrap() {
         "close" => {
             Jim_Free((*interp).cmdPrivData);
-            let cmd_name = (**v[0]).bytes;
+            let cmd_name = get_string(&mut **v[0]);
             Jim_DeleteCommand(interp, cmd_name);
             return JIM_OK as c_int;
         }
@@ -93,12 +92,8 @@ pub unsafe extern "C" fn database_cmd(
             let tree = &mut *((*interp).cmdPrivData as *mut Tree);
             let mut iter = tree.scan(b"");
             while let Some(Ok((k, v))) = iter.next() {
-                //let key = CString::from_vec_unchecked(k);
-                //let value = CString::from_vec_unchecked(v);
                 let key = String::from_utf8(k);
                 let value = String::from_utf8(v);
-                // let key = CString::from_vec_unchecked(k);
-                // let value = CString::from_vec_unchecked(v);
                 println!("key: {:?} value: {:?}", key, value);
             }
         }
@@ -168,8 +163,7 @@ pub unsafe extern "C" fn database_cmd(
                     cloned.len() as c_int,
                 );
 
-                // we don't have null terminator so we need to add it here or nah?
-                let value_len: c_int = vv.len() as c_int; //  + 1;
+                let value_len: c_int = vv.len() as c_int;
                 let valued = CString::new(vv).expect("cannot make C string");
                 let cloned_tempVar = tempVar.clone();
                 let value_obj =
