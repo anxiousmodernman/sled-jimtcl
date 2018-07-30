@@ -1,6 +1,6 @@
 # sled-jimtcl
 
-WIP: bindings to sled for Jim Tcl
+WIP: Jim Tcl bindings to the [sled](https://github.com/spacejam/sled) embedded key-value database.
 
 ## Setup
 
@@ -24,6 +24,9 @@ cd sled-jimtcl
 cargo build
 sudo cp $(pwd)/target/debug/libsled_jimtcl.so /usr/local/lib/jim/sled.so
 ```
+
+Note that the shared library's path under **target** will be different if you 
+use `cargo build --release`.
 
 A **naming scheme is required** to allow the `jimsh` to find your extension. For
 example, to create a package named `foo`, the name should be the same across 
