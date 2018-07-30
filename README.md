@@ -38,6 +38,33 @@ several locations in Tcl, Rust (or C) code, and on disk.
   `pub fn Jim_fooInit(interp: *mut Jim_Interp) -> c_int`
 * In Rust, Init and command functions are marked `#[no_mangle]` so C can find them.
 
+## Basic Usage
+
+Sled is a file-based database, like rocksdb or leveldb. This extension behaves
+like the sqlite extension: a single command `sled` is created on import, and
+we use this command to create a db command, which we conventionally call `db`.
+
+```tcl
+package require sled
+
+sled db /some/path/to/db
+```
+
+Sled supports basic key-value operations: put, get, scan, delete. Pass these
+to db, along with appropriate arguments.
+
+```tcl
+db put foo baz
+db put foo:foo2:foo3 baz
+db scan foo { k v } {
+    # we expect 2 iterations here over the "foo" keyspace
+    puts "got key: $k"
+    puts "got val: $v"
+}
+set x [db get foo]
+puts "a single get: $x"
+```
+
 ## Hacking
 
 Use a symlink so you can avoid copying the .so file after every `cargo build`,
