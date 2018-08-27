@@ -32,12 +32,13 @@ pub unsafe extern "C" fn db_init(
     let db_cmd_name = objv.offset(1);
     let path_ptr = objv.offset(2);
 
-    // canonicalize path to give us an absolute path
-    let path = fs::canonicalize(Path::new(
-        CStr::from_ptr(get_string(&mut **path_ptr))
+    // create if not exist
+
+
+    // TODO: canonicalize path to give us an absolute path
+    let path = Path::new(CStr::from_ptr(get_string(&mut **path_ptr))
             .to_str()
-            .unwrap(),
-    )).expect("could not canonicalize path");
+            .unwrap());
 
     let config = ConfigBuilder::new().path(path).build();
     let tree = Tree::start(config).expect("error loading sled database");
