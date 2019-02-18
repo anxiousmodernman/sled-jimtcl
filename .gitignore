@@ -5,6 +5,9 @@ Cargo.lock
 # test database dir
 .test.db
 
+# Addicted to code completion
+.idea
+
 # lennart's container thing
 mkosi*
 .mkosi*

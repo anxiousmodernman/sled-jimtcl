@@ -6,8 +6,8 @@ use std::path::PathBuf;
 fn main() {
     // Tell cargo to tell rustc to link the system bzip2
     // shared library.
-    //    println!("cargo:rustc-link-search=../jimtcl");
-    //    println!("cargo:rustc-link-lib=jim");
+    println!("cargo:rustc-link-search=/usr/local/lib");
+    println!("cargo:rustc-link-lib=jim");
 
     // The bindgen::Builder is the main entry point
     // to bindgen, and lets you build up options for

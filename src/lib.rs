@@ -7,13 +7,14 @@ extern crate sled;
 // #include <jim.h>
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
-use sled::{ConfigBuilder, Tree};
+use sled::{ConfigBuilder, Tree, Db};
 use std::ffi::{CStr, CString};
 use std::fs;
 use std::mem;
 use std::os::raw::{c_char, c_int, c_void};
 use std::path::Path;
 use std::str;
+use std::ops::Deref;
 
 /// Our main command. In Tcl, when call "sled" command, we are calling this
 /// function. We expect to be called with "sled dbname /path/to/db". This function
@@ -41,11 +42,11 @@ pub unsafe extern "C" fn db_init(
             .unwrap());
 
     let config = ConfigBuilder::new().path(path).build();
-    let tree = Tree::start(config).expect("error loading sled database");
-    let boxed: *mut Tree = Box::into_raw(Box::new(tree));
+    let tree = sled::Db::start(config).expect("error loading sled database");
+    let boxed: *mut Db = Box::into_raw(Box::new(tree));
 
     // Make a void pointer for C
-    let ttptr = std::mem::transmute::<*mut Tree, *mut c_void>(boxed);
+    let ttptr = std::mem::transmute::<*mut Db, *mut c_void>(boxed);
 
     Jim_CreateCommand(
         interp,
@@ -100,7 +101,7 @@ pub unsafe extern "C" fn database_cmd(
             let mut iter = tree.scan(b"");
             while let Some(Ok((k, v))) = iter.next() {
                 let key = String::from_utf8(k);
-                let value = String::from_utf8(v);
+                let value = String::from_utf8(v.deref().to_vec());
                 println!("key: {:?} value: {:?}", key, value);
             }
         }
@@ -129,7 +130,7 @@ pub unsafe extern "C" fn database_cmd(
             let key = CStr::from_ptr(get_string(&mut **args[2])).to_bytes();
             let tree: &Tree = from_cmd_private_data(interp);
             if let Ok(Some(val)) = tree.get(key) {
-                let s = CString::new(val).unwrap();
+                let s = CString::new(val.deref().to_vec()).unwrap();
                 Jim_SetResultFormatted(interp, s.as_ptr());
                 return JIM_OK as c_int;
             }
@@ -183,7 +184,7 @@ pub unsafe extern "C" fn database_cmd(
                 // set stack vars k and v from db scan prefix { k v } { script... }
                 // and then eval the script
                 set_interp_var(interp, kv_vars[0], k);
-                set_interp_var(interp, kv_vars[1], v);
+                set_interp_var(interp, kv_vars[1], v.deref().to_vec());
                 Jim_Eval(interp, script.as_ptr() as *const c_char);
             }
             // TODO need to remove stack vars here?
